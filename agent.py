@@ -1,3 +1,5 @@
+import sys
+
 import torch
 import random
 import numpy as np
@@ -6,8 +8,8 @@ from game import SnakeGameAI, Direction, Point
 from model import Linear_QNet, QTrainer
 from helper import plot
 
-MAX_MEMORY = 100_000
-BATCH_SIZE = 1000
+MAX_MEMORY = 20_000
+BATCH_SIZE = 128
 LR = 0.001
 
 class Agent:
@@ -17,7 +19,8 @@ class Agent:
         self.epsilon = 0 # randomness
         self.gamma = 0.9 # discount rate
         self.memory = deque(maxlen=MAX_MEMORY) # popleft()
-        self.model = Linear_QNet(11, 256, 3)
+        #self.model = Linear_QNet(11, 256, 3)
+        self.model = Linear_QNet(11, 128, 3)
         self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
 
 
@@ -106,7 +109,7 @@ def train():
     total_score = 0
     record = 0
     agent = Agent()
-    game = SnakeGameAI()
+    game = SnakeGameAI(render=False)
     while True:
         # get old state
         state_old = agent.get_state(game)
@@ -128,20 +131,45 @@ def train():
             # train long memory, plot result
             game.reset()
             agent.n_games += 1
-            agent.train_long_memory()
+            if agent.n_games % 10 == 0:
+                agent.train_long_memory()
 
             if score > record:
                 record = score
                 agent.model.save()
 
-            print('Game', agent.n_games, 'Score', score, 'Record:', record)
-
             plot_scores.append(score)
             total_score += score
             mean_score = total_score / agent.n_games
             plot_mean_scores.append(mean_score)
-            plot(plot_scores, plot_mean_scores)
+            if agent.n_games % 100 == 0:
+            #    plot(plot_scores, plot_mean_scores)
+                print('Game', agent.n_games, 'Score', score, 'Record:', record)
+            if agent.n_games % 5000 == 0:
+                plot(plot_scores, plot_mean_scores)
+                sys.exit()
 
+def evaluate_agent(model_path, num_games=100):
+    agent = Agent()
+    #agent.model.load_state_dict(torch.load(model_path))
+    agent.model.eval()
+
+    game = SnakeGameAI(render=True)
+
+    total_score = 0
+    for _ in range(num_games):
+        game_over = False
+        game.reset()
+        while not game_over:
+            state = agent.get_state(game)
+            final_move = agent.get_action(state)
+            reward, done, score = game.play_step(final_move)
+            if done:
+                break
+        total_score += score
+    average_score = total_score / num_games
+    print(f'Average score over {num_games} games: {average_score}')
 
 if __name__ == '__main__':
-    train()
+    evaluate_agent(model_path='model/model.pth', num_games=10)
+    #train()
